@@ -19,7 +19,6 @@ jobs:
     outputs:
       version: ${{ steps.meta.outputs.version }}
       source_url: ${{ steps.meta.outputs.source_url }}
-      sha256: ${{ steps.meta.outputs.sha256 }}
       tag: ${{ steps.meta.outputs.tag }}
       should_build: ${{ steps.meta.outputs.should_build }}
     steps:
@@ -33,7 +32,6 @@ jobs:
           metadata=$(curl --fail --silent --show-error --retry 3 \
             'https://copilot.tencent.com/v2/update?platform=workbuddy-darwin-x64')
           source_url=$(jq -er '.url' <<<"$metadata")
-          sha256=$(jq -er '.sha256hash' <<<"$metadata")
           filename=${source_url##*/}
           version=${filename#WorkBuddy-darwin-x64-}
           version=${version%.zip}
@@ -46,7 +44,6 @@ jobs:
           {
             echo "version=$version"
             echo "source_url=$source_url"
-            echo "sha256=$sha256"
             echo "tag=$tag"
             echo "should_build=$should_build"
           } >> "$GITHUB_OUTPUT"
@@ -70,7 +67,6 @@ jobs:
           ARCH: ${{ matrix.arch }}
           VERSION: ${{ needs.prepare.outputs.version }}
           SOURCE_URL: ${{ needs.prepare.outputs.source_url }}
-          SOURCE_SHA256: ${{ needs.prepare.outputs.sha256 }}
         run: ./scripts/build-deb.sh
       - name: Inspect package
         run: |
@@ -104,4 +100,3 @@ jobs:
           else
             gh release create "$TAG" dist/* --title "WorkBuddy $VERSION" --notes "$notes"
           fi
-
