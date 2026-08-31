@@ -1,0 +1,10 @@
+{
+  "name": "workbuddy-linux-packaging",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Build tooling for the unofficial WorkBuddy Debian package",
+  "license": "MIT",
+  "devDependencies": {
+    "@electron/asar": "4.3.0"
+  }
+}
