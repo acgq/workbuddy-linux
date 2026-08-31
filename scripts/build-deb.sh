@@ -46,7 +46,14 @@ fi
 if [[ -d "$resources/app.asar.unpacked" ]]; then
   cp -a "$resources/app.asar.unpacked" "$package_root/opt/workbuddy/app"
 fi
-npx --yes asar@3.2.0 extract "$resources/app.asar" "$package_root/opt/workbuddy/app"
+# The upstream ASAR header references a few unpacked files that are absent from
+# the macOS ZIP. asar reports ENOENT after extracting the available application;
+# this is also tolerated by the AUR recipe.
+npx --yes asar@3.2.0 extract "$resources/app.asar" "$package_root/opt/workbuddy/app" || true
+if [[ ! -f "$package_root/opt/workbuddy/app/main/index.js" ]]; then
+  echo "ASAR extraction did not produce main/index.js" >&2
+  exit 1
+fi
 
 better_sqlite="$work_dir/downloads/better-sqlite3.tgz"
 node_pty="$work_dir/downloads/node-pty.tgz"
