@@ -53,7 +53,8 @@ jobs:
     if: needs.prepare.outputs.should_build == 'true'
     strategy:
       matrix:
-        arch: [amd64, arm64]
+        # ARM64 is not published until it has been tested on real hardware.
+        arch: [amd64]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
