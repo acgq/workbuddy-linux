@@ -1,0 +1,107 @@
+name: Build and release Debian packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Rebuild an existing release
+        type: boolean
+        default: false
+  schedule:
+    - cron: "23 3 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      source_url: ${{ steps.meta.outputs.source_url }}
+      sha256: ${{ steps.meta.outputs.sha256 }}
+      tag: ${{ steps.meta.outputs.tag }}
+      should_build: ${{ steps.meta.outputs.should_build }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: meta
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force || false }}
+        run: |
+          set -euo pipefail
+          metadata=$(curl --fail --silent --show-error --retry 3 \
+            'https://copilot.tencent.com/v2/update?platform=workbuddy-darwin-x64')
+          source_url=$(jq -er '.url' <<<"$metadata")
+          sha256=$(jq -er '.sha256hash' <<<"$metadata")
+          filename=${source_url##*/}
+          version=${filename#WorkBuddy-darwin-x64-}
+          version=${version%.zip}
+          version=${version/-/_}
+          tag="v${version}"
+          should_build=true
+          if gh release view "$tag" >/dev/null 2>&1 && [[ "$FORCE" != true ]]; then
+            should_build=false
+          fi
+          {
+            echo "version=$version"
+            echo "source_url=$source_url"
+            echo "sha256=$sha256"
+            echo "tag=$tag"
+            echo "should_build=$should_build"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.should_build == 'true'
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Build .deb
+        env:
+          ARCH: ${{ matrix.arch }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          SOURCE_URL: ${{ needs.prepare.outputs.source_url }}
+          SOURCE_SHA256: ${{ needs.prepare.outputs.sha256 }}
+        run: ./scripts/build-deb.sh
+      - name: Inspect package
+        run: |
+          dpkg-deb --info dist/*.deb
+          dpkg-deb --contents dist/*.deb | tail -n 20
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workbuddy-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          SOURCE_URL: ${{ needs.prepare.outputs.source_url }}
+        run: |
+          notes=$(printf 'Unofficial Linux packages for WorkBuddy %s.\n\nSource: %s\n\nSee the repository README for installation notes and disclaimers.' "$VERSION" "$SOURCE_URL")
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+            gh release edit "$TAG" --notes "$notes"
+          else
+            gh release create "$TAG" dist/* --title "WorkBuddy $VERSION" --notes "$notes"
+          fi
+
