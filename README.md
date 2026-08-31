@@ -2,6 +2,8 @@
 
 这是一个为腾讯 WorkBuddy 制作非官方 Linux `.deb` 安装包的自动化项目，适用于 Debian、Ubuntu 及其衍生发行版，支持 `amd64` 和 `arm64`。
 
+> 🤖 **制作说明：纯科技，零手工。** 这个项目从研究 AUR 配方、编写打包脚本和 GitHub Actions，到排查构建问题、打出 `.deb` 并发布首个 Release，均由 OpenAI Codex 一手操办。人类负责提出想法，Codex 负责把活干完——本 README 的这段声明也不例外。
+
 腾讯目前没有发布官方 Linux 客户端。本项目参考 AUR 社区的 [`workbuddy`](https://aur.archlinux.org/packages/workbuddy) 配方：下载 WorkBuddy 官方 macOS 应用资源，将其中依赖平台的 `better-sqlite3` 和 `node-pty` 替换为 Linux 构建，并用打包在 `.deb` 内的 Electron runtime 启动。
 
 ## 安装
