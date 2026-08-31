@@ -1,6 +1,6 @@
 # WorkBuddy for Debian/Ubuntu（非官方）
 
-这是一个为腾讯 WorkBuddy 制作非官方 Linux `.deb` 安装包的自动化项目，适用于 Debian、Ubuntu 及其衍生发行版，支持 `amd64` 和 `arm64`。
+这是一个为腾讯 WorkBuddy 制作非官方 Linux `.deb` 安装包的自动化项目，适用于 Debian、Ubuntu 及其衍生发行版。目前 Release 发布经过虚拟机验证的 `amd64` 包；构建脚本保留实验性的 `arm64` 支持，但暂不自动发布。
 
 > 🤖 **制作说明：纯科技，零手工。** 这个项目从研究 AUR 配方、编写打包脚本和 GitHub Actions，到排查构建问题、打出 `.deb` 并发布首个 Release，均由 OpenAI Codex 一手操办。人类负责提出想法，Codex 负责把活干完——本 README 的这段声明也不例外。
 
@@ -18,7 +18,7 @@ sudo apt install ./workbuddy_*.deb
 
 ## 自动构建与更新
 
-GitHub Actions 每天查询 WorkBuddy 官方更新接口。检测到新版本后会构建两个架构的包，并创建 GitHub Release。也可以在 Actions 页手动运行 **Build and release Debian packages**；勾选 `force` 可覆盖重建已有版本的附件。
+GitHub Actions 每天查询 WorkBuddy 官方更新接口。检测到新版本后会构建 `amd64` 包，并创建 GitHub Release。也可以在 Actions 页手动运行 **Build and release Debian packages**；勾选 `force` 可覆盖重建已有版本的附件。
 
 上游版本会由官方更新接口动态获取；由于官方元数据中的哈希曾与实际 ZIP 不一致（AUR 配方也使用 `SKIP`），工作流不使用固定哈希阻止版本升级，而是检查 ZIP 是否完整可解压。最终 Release 同时提供每个 `.deb` 的 SHA-256 校验文件。构建脚本不会把上游应用二进制提交到本仓库。
 
