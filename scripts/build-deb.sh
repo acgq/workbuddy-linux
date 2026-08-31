@@ -3,7 +3,9 @@ set -euo pipefail
 
 VERSION="${VERSION:?VERSION is required (for example 5.3.14.36279234_825709d4)}"
 SOURCE_URL="${SOURCE_URL:?SOURCE_URL is required}"
-ELECTRON_VERSION="${ELECTRON_VERSION:-44.0.0}"
+# Keep the runtime aligned with the Electron Framework bundled by WorkBuddy.
+# This can still be overridden explicitly for compatibility testing.
+ELECTRON_VERSION="${ELECTRON_VERSION:-37.10.3}"
 ARCH="${ARCH:-$(dpkg --print-architecture)}"
 
 case "$ARCH" in
@@ -44,35 +46,66 @@ fi
 # ASAR entries marked as unpacked are stored beside app.asar and must be present
 # while extracting. Merge both parts exactly as Electron expects at runtime.
 if [[ -d "$resources/app.asar.unpacked" ]]; then
-  cp -a "$resources/app.asar.unpacked" "$package_root/opt/workbuddy/app"
+  cp -a "$resources/app.asar.unpacked" "$package_root/opt/workbuddy/app.asar.unpacked"
 fi
 # The upstream ASAR header references a few unpacked files that are absent from
-# the macOS ZIP. asar reports ENOENT after extracting the available application;
-# this is also tolerated by the AUR recipe.
-npx --yes asar@3.2.0 extract "$resources/app.asar" "$package_root/opt/workbuddy/app" || true
-if [[ ! -f "$package_root/opt/workbuddy/app/main/index.js" ]]; then
-  echo "ASAR extraction did not produce main/index.js" >&2
+# the macOS ZIP. Add harmless placeholders one by one so asar can finish walking
+# the archive instead of stopping before later JavaScript dependencies.
+asar_log="$work_dir/asar-extract.log"
+extracted=false
+for _attempt in $(seq 1 50); do
+  if npx --yes asar@3.2.0 extract "$resources/app.asar" "$package_root/opt/workbuddy/app.asar.unpacked" >"$asar_log" 2>&1; then
+    extracted=true
+    break
+  fi
+  missing=$(sed -n "s/.*path: '\([^']*\)'.*/\1/p" "$asar_log" | head -1)
+  case "$missing" in
+    "$resources/app.asar.unpacked/"*)
+      echo "Adding placeholder for absent upstream sidecar: ${missing#"$resources/app.asar.unpacked/"}" >&2
+      mkdir -p "$(dirname "$missing")"
+      touch "$missing"
+      ;;
+    *)
+      cat "$asar_log" >&2
+      echo "ASAR extraction failed without a recoverable missing sidecar path" >&2
+      exit 1
+      ;;
+  esac
+done
+if [[ "$extracted" != true ]]; then
+  echo "ASAR extraction did not complete after 50 attempts" >&2
   exit 1
 fi
+
+required_files=(
+  main/index.js
+  node_modules/@larksuiteoapi/node-sdk/package.json
+)
+for required_file in "${required_files[@]}"; do
+  if [[ ! -f "$package_root/opt/workbuddy/app.asar.unpacked/$required_file" ]]; then
+    echo "ASAR extraction is incomplete: missing $required_file" >&2
+    exit 1
+  fi
+done
 
 better_sqlite="$work_dir/downloads/better-sqlite3.tgz"
 node_pty="$work_dir/downloads/node-pty.tgz"
 download "https://registry.npmjs.org/better-sqlite3/-/better-sqlite3-13.0.3.tgz" "$better_sqlite"
 download "https://registry.npmjs.org/@lydell/node-pty-linux-${node_pty_arch}/-/node-pty-linux-${node_pty_arch}-1.2.0-beta.14.tgz" "$node_pty"
-rm -rf "$package_root/opt/workbuddy/app/node_modules/better-sqlite3" \
-  "$package_root/opt/workbuddy/app/node_modules/@lydell/node-pty-linux-x64" \
-  "$package_root/opt/workbuddy/app/node_modules/@lydell/node-pty-linux-arm64"
-mkdir -p "$package_root/opt/workbuddy/app/node_modules/better-sqlite3" \
-  "$package_root/opt/workbuddy/app/node_modules/@lydell/node-pty-linux-${node_pty_arch}"
-tar -xzf "$better_sqlite" --strip-components=1 -C "$package_root/opt/workbuddy/app/node_modules/better-sqlite3"
-tar -xzf "$node_pty" --strip-components=1 -C "$package_root/opt/workbuddy/app/node_modules/@lydell/node-pty-linux-${node_pty_arch}"
+rm -rf "$package_root/opt/workbuddy/app.asar.unpacked/node_modules/better-sqlite3" \
+  "$package_root/opt/workbuddy/app.asar.unpacked/node_modules/@lydell/node-pty-linux-x64" \
+  "$package_root/opt/workbuddy/app.asar.unpacked/node_modules/@lydell/node-pty-linux-arm64"
+mkdir -p "$package_root/opt/workbuddy/app.asar.unpacked/node_modules/better-sqlite3" \
+  "$package_root/opt/workbuddy/app.asar.unpacked/node_modules/@lydell/node-pty-linux-${node_pty_arch}"
+tar -xzf "$better_sqlite" --strip-components=1 -C "$package_root/opt/workbuddy/app.asar.unpacked/node_modules/better-sqlite3"
+tar -xzf "$node_pty" --strip-components=1 -C "$package_root/opt/workbuddy/app.asar.unpacked/node_modules/@lydell/node-pty-linux-${node_pty_arch}"
 
 # Match the two portability patches maintained by the AUR package.
-main_js="$package_root/opt/workbuddy/app/main/index.js"
+main_js="$package_root/opt/workbuddy/app.asar.unpacked/main/index.js"
 sed -i 's/tray\.on("right-click", () => this\.tray?\.popUpContextMenu(contextMenu))/tray.setContextMenu(contextMenu)/g' "$main_js"
 while IFS= read -r -d '' file; do
   sed -i "s#process\.resourcesPath#'/opt/workbuddy'#g" "$file"
-done < <(grep -IlZR --null 'process\.resourcesPath' "$package_root/opt/workbuddy/app")
+done < <(grep -IlZR --null 'process\.resourcesPath' "$package_root/opt/workbuddy/app.asar.unpacked")
 
 electron_zip="$work_dir/downloads/electron.zip"
 download "https://github.com/electron/electron/releases/download/v${ELECTRON_VERSION}/electron-v${ELECTRON_VERSION}-linux-${electron_arch}.zip" "$electron_zip"
@@ -81,12 +114,16 @@ unzip -q "$electron_zip" -d "$package_root/opt/workbuddy/electron"
 chmod 4755 "$package_root/opt/workbuddy/electron/chrome-sandbox"
 
 install -Dm644 "$root_dir/WorkBuddy.desktop" "$package_root/usr/share/applications/workbuddy.desktop"
-icon="$package_root/opt/workbuddy/app/resources/icon.png"
-[[ -f "$icon" ]] && install -Dm644 "$icon" "$package_root/usr/share/icons/hicolor/1024x1024/apps/workbuddy.png"
+icon="$package_root/opt/workbuddy/app.asar.unpacked/resources/icon.png"
+if [[ ! -f "$icon" ]]; then
+  echo "Required application icon is missing: $icon" >&2
+  exit 1
+fi
+install -Dm644 "$icon" "$package_root/usr/share/icons/hicolor/1024x1024/apps/workbuddy.png"
 
 cat > "$package_root/usr/bin/workbuddy" <<'EOF'
 #!/bin/sh
-exec /opt/workbuddy/electron/electron /opt/workbuddy/app "$@"
+exec /opt/workbuddy/electron/electron /opt/workbuddy/app.asar.unpacked "$@"
 EOF
 chmod 0755 "$package_root/usr/bin/workbuddy"
 
