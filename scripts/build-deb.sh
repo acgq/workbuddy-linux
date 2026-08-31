@@ -46,7 +46,7 @@ fi
 if [[ -d "$resources/app.asar.unpacked" ]]; then
   cp -a "$resources/app.asar.unpacked" "$package_root/opt/workbuddy/app"
 fi
-npx --yes @electron/asar@4.3.0 extract "$resources/app.asar" "$package_root/opt/workbuddy/app"
+npx --yes asar@3.2.0 extract "$resources/app.asar" "$package_root/opt/workbuddy/app"
 
 better_sqlite="$work_dir/downloads/better-sqlite3.tgz"
 node_pty="$work_dir/downloads/node-pty.tgz"

@@ -5,6 +5,6 @@
   "description": "Build tooling for the unofficial WorkBuddy Debian package",
   "license": "MIT",
   "devDependencies": {
-    "@electron/asar": "4.3.0"
+    "asar": "3.2.0"
   }
 }
