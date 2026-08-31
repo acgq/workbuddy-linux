@@ -18,7 +18,7 @@ sudo apt install ./workbuddy_*.deb
 
 GitHub Actions 每天查询 WorkBuddy 官方更新接口。检测到新版本后会构建两个架构的包，并创建 GitHub Release。也可以在 Actions 页手动运行 **Build and release Debian packages**；勾选 `force` 可覆盖重建已有版本的附件。
 
-构建过程会计算下载文件的 SHA-256，并与官方更新接口提供的值比较。已观察到官方元数据的哈希与实际 ZIP 不一致（AUR 配方也因此对该文件使用 `SKIP`）；遇到这种情况，构建会明确警告并记录实际哈希，而不会把不准确的官方值伪装成已验证。最终 Release 同时提供每个 `.deb` 的校验文件。构建脚本不会把上游应用二进制提交到本仓库。
+上游版本会由官方更新接口动态获取；由于官方元数据中的哈希曾与实际 ZIP 不一致（AUR 配方也使用 `SKIP`），工作流不使用固定哈希阻止版本升级，而是检查 ZIP 是否完整可解压。最终 Release 同时提供每个 `.deb` 的 SHA-256 校验文件。构建脚本不会把上游应用二进制提交到本仓库。
 
 ## 来源与用途
 
@@ -37,12 +37,11 @@ GitHub Actions 每天查询 WorkBuddy 官方更新接口。检测到新版本后
 
 ## 本地构建
 
-需要 Bash、curl、unzip、Node.js、npm 和 `dpkg-deb`。先从官方更新接口取得 `url` 和 `sha256hash`，然后运行：
+需要 Bash、curl、unzip、Node.js、npm 和 `dpkg-deb`。先从官方更新接口取得版本和 `url`，然后运行：
 
 ```bash
 VERSION=5.3.14.36279234_825709d4 \
 SOURCE_URL='https://download.codebuddy.cn/…/WorkBuddy-darwin-x64-….zip' \
-SOURCE_SHA256='…' \
 ARCH=amd64 \
 ./scripts/build-deb.sh
 ```

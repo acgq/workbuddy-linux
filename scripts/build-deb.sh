@@ -3,7 +3,6 @@ set -euo pipefail
 
 VERSION="${VERSION:?VERSION is required (for example 5.3.14.36279234_825709d4)}"
 SOURCE_URL="${SOURCE_URL:?SOURCE_URL is required}"
-SOURCE_SHA256="${SOURCE_SHA256:?SOURCE_SHA256 is required}"
 ELECTRON_VERSION="${ELECTRON_VERSION:-44.0.0}"
 ARCH="${ARCH:-$(dpkg --print-architecture)}"
 
@@ -33,14 +32,7 @@ download() {
 
 app_zip="$work_dir/downloads/workbuddy.zip"
 download "$SOURCE_URL" "$app_zip"
-actual_sha256=$(sha256sum "$app_zip" | cut -d' ' -f1)
-if [[ "$actual_sha256" != "$SOURCE_SHA256" ]]; then
-  echo "WARNING: Tencent update metadata SHA-256 does not match the downloaded ZIP." >&2
-  echo "metadata: $SOURCE_SHA256" >&2
-  echo "download: $actual_sha256" >&2
-  echo "The AUR reference package also leaves this source checksum unverified (SKIP)." >&2
-fi
-echo "$actual_sha256  $app_zip" | sha256sum --check --strict
+unzip -tq "$app_zip"
 unzip -q "$app_zip" -d "$work_dir/app"
 resources="$work_dir/app/WorkBuddy.app/Contents/Resources"
 
@@ -49,6 +41,11 @@ if [[ ! -f "$resources/app.asar" ]]; then
   exit 1
 fi
 
+# ASAR entries marked as unpacked are stored beside app.asar and must be present
+# while extracting. Merge both parts exactly as Electron expects at runtime.
+if [[ -d "$resources/app.asar.unpacked" ]]; then
+  cp -a "$resources/app.asar.unpacked" "$package_root/opt/workbuddy/app"
+fi
 npx --yes @electron/asar@4.3.0 extract "$resources/app.asar" "$package_root/opt/workbuddy/app"
 
 better_sqlite="$work_dir/downloads/better-sqlite3.tgz"
