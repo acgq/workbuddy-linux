@@ -8,7 +8,8 @@ on:
         type: boolean
         default: false
   schedule:
-    - cron: "23 3 * * *"
+    # GitHub Actions cron uses UTC; 00:00 UTC is 08:00 Asia/Shanghai.
+    - cron: "0 0 * * *"
 
 permissions:
   contents: write
@@ -22,7 +23,7 @@ jobs:
       tag: ${{ steps.meta.outputs.tag }}
       should_build: ${{ steps.meta.outputs.should_build }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - id: meta
         env:
           GH_TOKEN: ${{ github.token }}
@@ -57,8 +58,8 @@ jobs:
         arch: [amd64]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -83,7 +84,7 @@ jobs:
     needs: [prepare, build]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           path: dist
           merge-multiple: true
