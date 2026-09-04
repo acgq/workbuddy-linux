@@ -1,51 +1,20 @@
-# WorkBuddy for Debian/Ubuntu（非官方）
+# WorkBuddy for Debian/Ubuntu（已停止维护）
 
-这是一个为腾讯 WorkBuddy 制作非官方 Linux `.deb` 安装包的自动化项目，适用于 Debian、Ubuntu 及其衍生发行版。目前 Release 发布经过虚拟机验证的 `amd64` 包；构建脚本保留实验性的 `arm64` 支持，但暂不自动发布。
+> [!IMPORTANT]
+> WorkBuddy 现已官方提供 Linux `.deb` 版本，本项目的非官方移植和打包功能已无需继续维护。本仓库不再自动检查更新、构建安装包或发布 Release。
 
-> 🤖 **制作说明：纯科技，零手工。** 这个项目从研究 AUR 配方、编写打包脚本和 GitHub Actions，到排查构建问题、打出 `.deb` 并发布首个 Release，均由 OpenAI Codex 一手操办。人类负责提出想法，Codex 负责把活干完——本 README 的这段声明也不例外。
+请使用官方 Linux 版本。可通过以下官方更新接口检查最新版本并获取下载链接：
 
-腾讯目前没有发布官方 Linux 客户端。本项目参考 AUR 社区的 [`workbuddy`](https://aur.archlinux.org/packages/workbuddy) 配方：下载 WorkBuddy 官方 macOS 应用资源，将其中依赖平台的 `better-sqlite3` 和 `node-pty` 替换为 Linux 构建，并用打包在 `.deb` 内的 Electron runtime 启动。
+<https://copilot.tencent.com/v2/update?platform=workbuddy-linux-x64-deb>
 
-## 安装
-
-从 [Releases](../../releases) 下载与你的架构匹配的 `.deb`，然后运行：
-
-```bash
-sudo apt install ./workbuddy_*.deb
-```
-
-安装后可从应用菜单启动 WorkBuddy，也可以在终端运行 `workbuddy`。
-
-## 自动构建与更新
-
-GitHub Actions 每天查询 WorkBuddy 官方更新接口。检测到新版本后会构建 `amd64` 包，并创建 GitHub Release。也可以在 Actions 页手动运行 **Build and release Debian packages**；勾选 `force` 可覆盖重建已有版本的附件。
-
-上游版本会由官方更新接口动态获取；由于官方元数据中的哈希曾与实际 ZIP 不一致（AUR 配方也使用 `SKIP`），工作流不使用固定哈希阻止版本升级，而是检查 ZIP 是否完整可解压。最终 Release 同时提供每个 `.deb` 的 SHA-256 校验文件。构建脚本不会把上游应用二进制提交到本仓库。
-
-## 来源与用途
-
-- 官方产品页：<https://www.workbuddy.cn/app>
-- 官方更新接口：<https://copilot.tencent.com/v2/update?platform=workbuddy-darwin-x64>
-- AUR 参考包：<https://aur.archlinux.org/packages/workbuddy>
-- AUR Git 仓库：<https://aur.archlinux.org/workbuddy.git>
-
-本项目的用途仅是为 Linux 用户提供兼容性打包和自动构建。这里的打包脚本采用 MIT License；WorkBuddy 应用、商标及其资源不属于本项目，权利归腾讯或相应权利人所有。本项目与腾讯无隶属、认可或官方支持关系，也没有为上游专有软件授予额外许可。公开分发前，请自行确认你所在地区及上游条款允许重新分发。
-
-## 已知限制
-
-- 这是从 macOS 资源移植的非官方版本，部分依赖 macOS 或腾讯内部原生模块的功能可能不可用。
-- 上游界面更新可能使兼容补丁失效；遇到问题请附上发行版、架构和终端启动日志。
-- Electron runtime 固定在构建脚本中的版本，升级后应重新验证登录、托盘、终端和文件操作。
-
-## 本地构建
-
-需要 Bash、curl、unzip、Node.js、npm 和 `dpkg-deb`。先从官方更新接口取得版本和 `url`，然后运行：
+接口返回的元数据中包含官方安装包下载地址。下载后可在 Debian、Ubuntu 及其衍生发行版上安装：
 
 ```bash
-VERSION=5.3.14.36279234_825709d4 \
-SOURCE_URL='https://download.codebuddy.cn/…/WorkBuddy-darwin-x64-….zip' \
-ARCH=amd64 \
-./scripts/build-deb.sh
+sudo apt install ./WorkBuddy*.deb
 ```
 
-输出位于 `dist/`。
+## 项目存档
+
+本项目曾通过从 macOS 应用资源制作非官方 Linux 安装包，为官方 Linux 版本推出前的用户提供临时解决方案。历史代码和构建脚本仅作存档参考，不再保证可用性，也不建议继续使用本仓库 Releases 中的非官方安装包。
+
+本仓库的打包脚本采用 MIT License。WorkBuddy 应用、商标及其资源的权利归腾讯或相应权利人所有。
