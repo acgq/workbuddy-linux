@@ -144,7 +144,7 @@ jobs:
 
           Electron is read from the source framework; the matching Tencent Linux runtime preserves its storage API and loading fuses. SQLite, FFI and desktop/CLI PTYs are exercised during the build; main content, daemon startup and protected storage initialization are checked under Xvfb.
 
-          Uses the standard workbuddy command, /opt/WorkBuddy installation and ~/.workbuddy profile. See README for portable and Debian installation instructions and remaining limitations.
+          Uses the standard workbuddy command, /opt/WorkBuddy installation and ~/.workbuddy profile.
           EOF
           tag="$TAG"
           if gh release view "$tag" >/dev/null 2>&1; then
