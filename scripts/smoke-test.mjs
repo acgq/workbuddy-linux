@@ -100,7 +100,7 @@ try {
   for (let attempt = 0; attempt < 60; attempt++) {
     const result = await command('Runtime.evaluate', { expression: 'document.body.innerText', returnByValue: true });
     text = result.result.value || '';
-    if (/登录|Login|Log in|Sign in|开始使用|What can I help|Ideas into reality/.test(text)) break;
+    if (/登录|Login|Log in|Sign in|开始使用|What can I help|Ideas into reality/i.test(text)) break;
     await delay(500);
   }
   const startupLog = readFileSync(path.join(profile, 'logs/main.log'), 'utf8');
@@ -109,7 +109,7 @@ try {
   const credentials = events.find(event => event.message?.[0] === '[CredentialBootstrap] main bootstrap created')?.message?.[1];
   assert.equal(credentials?.symmetricAvailable, true, 'Tencent storage symmetric key is unavailable');
   assert.equal(credentials?.asymmetricMaterialAvailable, true, 'Protected per-user storage key is unavailable');
-  assert.match(text, /登录|Login|Log in|Sign in|开始使用|What can I help|Ideas into reality/, 'Application main content did not render');
+  assert.match(text, /登录|Login|Log in|Sign in|开始使用|What can I help|Ideas into reality/i, 'Application main content did not render');
   // A fallback window alone is insufficient: the daemon must finish startup.
   for (let attempt = 0; attempt < 60; attempt++) {
     const mainLog = path.join(profile, 'logs/main.log');
