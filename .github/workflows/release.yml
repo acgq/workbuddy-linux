@@ -1,0 +1,155 @@
+name: Build and release Linux port
+
+on:
+  push:
+    paths: ['scripts/**', '.github/workflows/**', 'WorkBuddy.desktop', 'package*.json']
+  pull_request:
+    paths: ['scripts/**', '.github/workflows/**', 'WorkBuddy.desktop', 'package*.json']
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Rebuild an existing port release
+        type: boolean
+        default: false
+  schedule:
+    # 08:00 Asia/Shanghai.
+    - cron: '0 0 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-port-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm test
+      - run: |
+          bash -n scripts/build-deb.sh scripts/build-linux.sh
+          sh -n scripts/launch.sh
+          node --check scripts/verify-native.cjs
+          node --check scripts/smoke-test.mjs
+
+  prepare:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      source_url: ${{ steps.meta.outputs.source_url }}
+      source_sha256: ${{ steps.meta.outputs.source_sha256 }}
+      should_build: ${{ steps.meta.outputs.should_build }}
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: meta
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force || false }}
+        run: |
+          set -euo pipefail
+          python3 scripts/build.py --metadata > metadata.json
+          version=$(jq -er '.packageVersion' metadata.json)
+          revision=$(jq -er '.packagingRevision' metadata.json)
+          tag="port-v${version}-r${revision}"
+          should_build=true
+          if gh release view "$tag" >/dev/null 2>&1 && [[ "$FORCE" != true ]]; then
+            should_build=false
+          fi
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "source_url=$(jq -er '.url' metadata.json)"
+            echo "source_sha256=$(jq -er '.sha256hash' metadata.json)"
+            echo "should_build=$should_build"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: [test, prepare]
+    if: needs.prepare.outputs.should_build == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Install graphical test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgtk-3-0 libnss3 libasound2t64 libgbm1
+      - name: Build portable archive and Debian package
+        env:
+          ARCH: amd64
+          VERSION: ${{ needs.prepare.outputs.version }}
+          SOURCE_URL: ${{ needs.prepare.outputs.source_url }}
+          SOURCE_SHA256: ${{ needs.prepare.outputs.source_sha256 }}
+        run: ./scripts/build-linux.sh
+      - name: Verify main content and daemon with a fresh profile
+        env:
+          XVFB: /usr/bin/Xvfb
+        run: |
+          sudo chown root:root work/current-amd64/WorkBuddy/chrome-sandbox
+          sudo chmod 4755 work/current-amd64/WorkBuddy/chrome-sandbox
+          node scripts/smoke-test.mjs work/current-amd64/WorkBuddy
+      - name: Inspect package and checksums
+        run: |
+          dpkg-deb --info dist/*.deb
+          cd dist
+          sha256sum --check ./*.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workbuddy-port-amd64
+          path: dist/*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: startup-evidence
+          path: |
+            work/*-amd64-*/smoke-*/console.log
+            work/*-amd64-*/smoke-*/login.png
+            work/*-amd64-*/smoke-*/result.json
+            work/current-amd64/WorkBuddy/port-manifest.json
+
+  release:
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: workbuddy-port-amd64
+          path: dist
+      - name: Publish verified build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          SOURCE_URL: ${{ needs.prepare.outputs.source_url }}
+        run: |
+          set -euo pipefail
+          cat > notes.md <<EOF
+          Unofficial macOS-to-Linux port of WorkBuddy ${VERSION} (amd64).
+
+          Source: ${SOURCE_URL}
+
+          Electron is read from the source framework; the matching Tencent Linux runtime preserves its storage API and loading fuses. SQLite, FFI and desktop/CLI PTYs are exercised during the build; main content, daemon startup and protected storage initialization are checked under Xvfb.
+
+          Uses the standard workbuddy command, /opt/WorkBuddy installation and ~/.workbuddy profile. See README for portable and Debian installation instructions and remaining limitations.
+          EOF
+          tag="$TAG"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/* --clobber
+            gh release edit "$tag" --notes-file notes.md
+          else
+            gh release create "$tag" dist/* --title "WorkBuddy Linux port $VERSION" --notes-file notes.md
+          fi

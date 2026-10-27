@@ -2,9 +2,10 @@
   "name": "workbuddy-linux-packaging",
   "private": true,
   "version": "1.0.0",
-  "description": "Build tooling for the unofficial WorkBuddy Debian package",
+  "description": "Build and verify the unofficial macOS-to-Linux WorkBuddy port",
   "license": "MIT",
-  "devDependencies": {
-    "asar": "3.2.0"
+  "scripts": {
+    "build": "./scripts/build-linux.sh",
+    "test": "python3 -m unittest discover -s scripts -p 'test_*.py'"
   }
 }
