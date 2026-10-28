@@ -75,6 +75,20 @@ class BuildTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             patch_linux(self.root)
 
+    def test_im_patch_preserves_the_upstream_fallback_for_both_versions(self):
+        main = self.root / "main"
+        main.mkdir()
+        target = main / "daemon-bootstrap.js"
+        for fallback in ("createHeadlessImChannelsBackend", "createUnavailableImChannelsBackend"):
+            with self.subTest(fallback=fallback):
+                target.write_text("function createDesktopImChannelsBackend(e){"
+                                  f"if(config()?.isOversea===!0)return {fallback}();"
+                                  "return nativeBackend(e)}")
+                patch_linux(self.root)
+                self.assertEqual(target.read_text(), "function createDesktopImChannelsBackend(e){"
+                                 f"if(process.platform===`linux`||config()?.isOversea===!0)return {fallback}();"
+                                 "return nativeBackend(e)}")
+
     def test_vendor_runtime_requires_matching_electron_base(self):
         validate_runtime_version("37.10.3", "37.10.3-24")
         with self.assertRaises(ValueError):

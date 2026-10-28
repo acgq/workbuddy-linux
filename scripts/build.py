@@ -203,15 +203,15 @@ def copy(source, target):
 
 def patch_linux(app):
     # The new enterprise IM SDK ships only Mach-O/Windows native components.
-    # Upstream already has a headless backend that excludes this extension.
+    # Upstream already has a fallback backend that excludes this extension.
     target = app / "main/daemon-bootstrap.js"
     code = target.read_text()
-    pattern = r"(function createDesktopImChannelsBackend\([^)]*\)\{)if\(([^;]+?isOversea===!0)\)return createHeadlessImChannelsBackend\(\);"
-    code, count = re.subn(pattern, r"\1if(process.platform===`linux`||\2)return createHeadlessImChannelsBackend();", code)
+    pattern = r"(function createDesktopImChannelsBackend\([^)]*\)\{)if\(([^;]+?isOversea===!0)\)return (create(?:Headless|Unavailable)ImChannelsBackend)\(\);"
+    code, count = re.subn(pattern, r"\1if(process.platform===`linux`||\2)return \3();", code)
     if count != 1:
         raise ValueError("Upstream enterprise IM startup guard changed; review the Linux patch")
     target.write_text(code)
-    return ["Use upstream headless IM backend on Linux (native enterprise IM SDK unavailable)"]
+    return ["Use upstream IM fallback on Linux (native enterprise IM SDK unavailable)"]
 
 
 def build(args):
@@ -264,7 +264,8 @@ def build(args):
     # UI, main-process code, CLI and prompts all come from the macOS source.
     native = linux_runtime / "resources"
     copy(native / "runtime", resources / "runtime")
-    main_code = (app / "main/index.js").read_text()
+    runtime_source = app / "main/shell-env-async.js"
+    main_code = (runtime_source if runtime_source.exists() else app / "main/index.js").read_text()
     runtime_versions = {}
     for name, command, pattern in [
         ("node", "node", r'name:`node`,archiveFile:`node\.tar\.gz`,version:`([^`]+)`'),
@@ -282,19 +283,30 @@ def build(args):
         copy(native_cli / "vendor" / name, app / "cli/vendor" / name)
 
     modules = app / "node_modules"
-    sqlite_version = package_json(app, "better-sqlite3")["version"]
     executable = port / "workbuddy"
     env = dict(os.environ, ELECTRON_RUN_AS_NODE="1")
     abi = run(executable, "-p", "process.versions.modules", env=env, capture_output=True, text=True).stdout.strip()
-    sqlite_file = f"better-sqlite3-v{sqlite_version}-electron-v{abi}-linux-{machine}.tar.gz"
-    sqlite_archive = download(f"https://github.com/WiseLibs/better-sqlite3/releases/download/v{sqlite_version}/{sqlite_file}")
-    unpack_tar(sqlite_archive, modules / "better-sqlite3")
+    sqlite_archive = None
+    if "better-sqlite3" in package_json(app)["dependencies"]:
+        sqlite_version = package_json(app, "better-sqlite3")["version"]
+        sqlite_file = f"better-sqlite3-v{sqlite_version}-electron-v{abi}-linux-{machine}.tar.gz"
+        sqlite_archive = download(f"https://github.com/WiseLibs/better-sqlite3/releases/download/v{sqlite_version}/{sqlite_file}")
+        unpack_tar(sqlite_archive, modules / "better-sqlite3")
+    elif 'require("node:sqlite")' in (app / "main/sqlite.js").read_text():
+        sqlite_version = "node:sqlite"
+    else:
+        raise ValueError("Unknown upstream database backend")
     koffi_version = package_json(app, "koffi")["version"]
     npm_package("koffi", koffi_version, modules / "koffi")
     pty_version = package_json(app, "@lydell/node-pty")["version"]
     pty_module = f"@lydell/node-pty-linux-{machine}"
     npm_package(pty_module, pty_version, modules / pty_module)
     copy(modules / pty_module, app / "cli/node_modules" / pty_module)
+    harness_version = None
+    if (modules / "@genie/agent-harness").exists():
+        harness_name = f"@tencent-ai/agent-harness-linux-{machine}"
+        harness_version = package_json(app, "@genie/agent-harness")["optionalDependencies"][harness_name]
+        npm_package(harness_name, harness_version, modules / harness_name)
     cli_meta = package_json(app / "cli")
     sandbox_name = f"@tencent-ai/sandbox-cli-linux-{machine}"
     sandbox_version = cli_meta["optionalDependencies"][sandbox_name]
@@ -317,12 +329,15 @@ def build(args):
         "Sources and platform helper provenance: port-manifest.json.\n")
     manifest = dict(version=version, packagingRevision=PACKAGING_REVISION, source=mac, linuxHelpers=linux,
                     electron=electron, tencentElectron=runtime_version, electronABI=abi, runtimes=runtime_versions,
-                    nativeModules=dict(sqlite=sqlite_version, koffi=koffi_version, pty=pty_version, sandbox=sandbox_version),
+                    nativeModules=dict(sqlite=sqlite_version, koffi=koffi_version, pty=pty_version, sandbox=sandbox_version,
+                                       harness=harness_version),
                     omittedSidecars=skipped, patches=patches,
-                    sqliteArtifactSHA256=digest(sqlite_archive).hex())
+                    sqliteArtifactSHA256=digest(sqlite_archive).hex() if sqlite_archive else None)
     (port / "port-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     run(executable, ROOT / "scripts/verify-native.cjs", app, env=env)
     run(resources / "runtime/node/bin/node", ROOT / "scripts/verify-native.cjs", app, "--cli")
+    if harness_version:
+        run(resources / "runtime/node/bin/node", modules / "@genie/agent-harness/bin/agent-harness.js", "--version")
     run(app / f"cli/vendor/ripgrep/{machine}-linux/rg", "--version")
     run(sandbox_target / "sandbox-cli", "--version")
 

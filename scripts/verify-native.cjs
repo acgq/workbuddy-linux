@@ -7,7 +7,8 @@ const load = createRequire(path.join(app, cliOnly ? 'cli/package.json' : 'packag
 
 (async () => {
   if (!cliOnly) {
-    const Database = load('better-sqlite3');
+    const Database = load('./package.json').dependencies['better-sqlite3']
+      ? load('better-sqlite3') : load('node:sqlite').DatabaseSync;
     const db = new Database(':memory:');
     db.exec('CREATE TABLE probe (value TEXT)');
     db.prepare('INSERT INTO probe VALUES (?)').run('linux');
