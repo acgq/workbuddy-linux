@@ -32,7 +32,7 @@ jobs:
           node-version: 22
       - run: npm test
       - run: |
-          bash -n scripts/build-deb.sh scripts/build-linux.sh
+          bash -n scripts/build-deb.sh scripts/build-linux.sh scripts/build-arch.sh
           sh -n scripts/launch.sh
           node --check scripts/verify-native.cjs
           node --check scripts/smoke-test.mjs
@@ -118,8 +118,48 @@ jobs:
             work/*-amd64-*/smoke-*/result.json
             work/current-amd64/WorkBuddy/port-manifest.json
 
+  build-arch:
+    needs: [build]
+    if: needs.build.result == 'success'
+    runs-on: ubuntu-24.04
+    container:
+      image: archlinux:base-devel
+    timeout-minutes: 30
+    steps:
+      - name: Prepare Arch build environment
+        run: |
+          pacman -Syu --noconfirm --needed base-devel git python shadow \
+            alsa-lib at-spi2-core cairo dbus expat gcc-libs glib2 glibc gtk3 \
+            libcups libdrm libx11 libxcb libxcomposite libxdamage libxext \
+            libxfixes libxkbcommon libxrandr mesa nspr nss pango xdg-utils zlib
+          useradd --create-home builder
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          name: workbuddy-port-amd64
+          path: dist
+      - name: Build and verify Arch package
+        run: |
+          set -euo pipefail
+          mkdir -p work
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+          archive="$(find dist -maxdepth 1 -type f -name 'workbuddy_*_amd64.tar.gz' -print -quit)"
+          test -n "$archive"
+          runuser -u builder -- ./scripts/build-arch.sh "$GITHUB_WORKSPACE/$archive"
+          pacman -Qip dist/*.pkg.tar.zst
+          cd dist
+          sha256sum --check ./*.pkg.tar.zst.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workbuddy-port-arch
+          path: |
+            dist/*.pkg.tar.zst
+            dist/*.pkg.tar.zst.sha256
+            dist/*.pkg.tar.zst.PKGBUILD
+          if-no-files-found: error
+
   release:
-    needs: [prepare, build]
+    needs: [prepare, build, build-arch]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -127,6 +167,10 @@ jobs:
       - uses: actions/download-artifact@v5
         with:
           name: workbuddy-port-amd64
+          path: dist
+      - uses: actions/download-artifact@v5
+        with:
+          name: workbuddy-port-arch
           path: dist
       - name: Publish verified build
         env:
@@ -139,6 +183,8 @@ jobs:
           set -euo pipefail
           cat > notes.md <<EOF
           Unofficial macOS-to-Linux port of WorkBuddy ${VERSION} (amd64).
+
+          Packages: Debian (.deb), Arch Linux / Manjaro (.pkg.tar.zst), and a portable tarball.
 
           Source: ${SOURCE_URL}
 
