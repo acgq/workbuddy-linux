@@ -32,7 +32,9 @@ jobs:
           node-version: 22
       - run: npm test
       - run: |
-          bash -n scripts/build-deb.sh scripts/build-linux.sh scripts/publish-aur.sh packaging/aur/PKGBUILD.in
+          for script in scripts/build-deb.sh scripts/build-linux.sh scripts/publish-aur.sh packaging/aur/PKGBUILD.in; do
+            bash -n "$script"
+          done
           sh -n scripts/launch.sh
           node --check scripts/verify-native.cjs
           node --check scripts/smoke-test.mjs
