@@ -2,9 +2,9 @@ name: Build and release Linux port
 
 on:
   push:
-    paths: ['scripts/**', '.github/workflows/**', 'WorkBuddy.desktop', 'package*.json']
+    paths: ['scripts/**', 'packaging/**', '.github/workflows/**', 'WorkBuddy.desktop', 'package*.json']
   pull_request:
-    paths: ['scripts/**', '.github/workflows/**', 'WorkBuddy.desktop', 'package*.json']
+    paths: ['scripts/**', 'packaging/**', '.github/workflows/**', 'WorkBuddy.desktop', 'package*.json']
   workflow_dispatch:
     inputs:
       force:
@@ -32,7 +32,7 @@ jobs:
           node-version: 22
       - run: npm test
       - run: |
-          bash -n scripts/build-deb.sh scripts/build-linux.sh
+          bash -n scripts/build-deb.sh scripts/build-linux.sh scripts/publish-aur.sh packaging/aur/PKGBUILD.in
           sh -n scripts/launch.sh
           node --check scripts/verify-native.cjs
           node --check scripts/smoke-test.mjs
@@ -153,3 +153,64 @@ jobs:
           else
             gh release create "$tag" dist/* --title "WorkBuddy $VERSION" --notes-file notes.md
           fi
+
+  aur:
+    needs: [test, prepare, release]
+    # Also retry AUR synchronization when the GitHub Release already exists.
+    if: >-
+      ${{ !cancelled() && github.ref == 'refs/heads/main' &&
+          needs.test.result == 'success' && needs.prepare.result == 'success' &&
+          (needs.release.result == 'success' || needs.prepare.outputs.should_build == 'false') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    concurrency:
+      group: aur-workbuddy-cn-bin
+      cancel-in-progress: false
+    container:
+      image: archlinux:base-devel
+    steps:
+      - name: Prepare Arch packaging tools
+        run: |
+          pacman -Syu --noconfirm --needed git openssh python github-cli
+          useradd --create-home builder
+      - uses: actions/checkout@v5
+      - name: Download published portable archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --pattern "workbuddy_${VERSION}-*_amd64.tar.gz*" --dir dist
+          python3 scripts/aur.py dist/*.tar.gz work/aur-package --repository "$GITHUB_REPOSITORY"
+      - name: Build and validate AUR package
+        run: |
+          set -euo pipefail
+          cp dist/*.tar.gz work/aur-package/
+          chown -R builder:builder work
+          runuser -u builder -- bash -c 'cd work/aur-package && makepkg --printsrcinfo > .SRCINFO && makepkg --nodeps --noconfirm --nosign'
+          pacman -Qip work/aur-package/*.pkg.tar.zst
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workbuddy-cn-bin-aur
+          include-hidden-files: true
+          path: |
+            work/aur-package/PKGBUILD
+            work/aur-package/.SRCINFO
+            work/aur-package/WorkBuddy.desktop
+            work/aur-package/workbuddy-launcher
+            work/aur-package/LICENSE
+          if-no-files-found: error
+      - name: Publish changed AUR metadata
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$AUR_SSH_PRIVATE_KEY"
+          ssh_dir=$(mktemp -d)
+          trap 'rm -rf "$ssh_dir"' EXIT
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > "$ssh_dir/key"
+          chmod 600 "$ssh_dir/key"
+          export GIT_SSH_COMMAND="ssh -i $ssh_dir/key -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$GITHUB_WORKSPACE/packaging/aur/known_hosts"
+          bash scripts/publish-aur.sh work/aur-package
