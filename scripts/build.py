@@ -111,6 +111,10 @@ def extract_asar(archive, destination):
                     source = safe_path(sidecar, relative)
                     if source.is_file():
                         shutil.copy2(source, target)
+                    elif re.search(r"\.framework/_CodeSignature/[^/]+$", relative):
+                        # Some macOS ZIPs omit framework signing metadata
+                        # indexed by ASAR. These signatures are unused on Linux.
+                        skipped.append(relative)
                     elif re.search(r"(?:^|/)(?:darwin[-_]|win32[-_]|freebsd[-_]|openbsd[-_]|musl[-_]|linux[-_])", relative):
                         # The macOS ZIP omits other platforms' sidecars.
                         # Required Linux bindings are restored and loaded below.

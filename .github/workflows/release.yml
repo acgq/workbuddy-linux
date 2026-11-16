@@ -149,7 +149,7 @@ jobs:
           tag="$TAG"
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" dist/* --clobber
-            gh release edit "$tag" --notes-file notes.md
+            gh release edit "$tag" --title "WorkBuddy $VERSION" --notes-file notes.md
           else
-            gh release create "$tag" dist/* --title "WorkBuddy Linux port $VERSION" --notes-file notes.md
+            gh release create "$tag" dist/* --title "WorkBuddy $VERSION" --notes-file notes.md
           fi

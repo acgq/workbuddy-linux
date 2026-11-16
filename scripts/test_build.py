@@ -57,6 +57,24 @@ class BuildTests(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             extract_asar(archive, self.root / "out")
 
+    def test_absent_macos_framework_signature_is_reported_without_placeholder(self):
+        relative = ("node_modules/@tencent/qimei-node/build/Release/QimeiSDKMac.xcframework/"
+                    "macos-arm64_x86_64/QimeiSDKMac.framework/_CodeSignature/CodeRequirements-1")
+        entry = {"unpacked": True, "size": 3}
+        for name in reversed(relative.split("/")):
+            entry = {"files": {name: entry}}
+        archive = self.archive(entry["files"])
+        output = self.root / "out"
+        self.assertEqual(extract_asar(archive, output), [relative])
+        self.assertFalse((output / relative).exists())
+
+    def test_missing_framework_binary_still_fails(self):
+        archive = self.archive({"QimeiSDKMac.framework": {"files": {
+            "QimeiSDKMac": {"unpacked": True, "size": 3},
+        }}})
+        with self.assertRaises(FileNotFoundError):
+            extract_asar(archive, self.root / "out")
+
     def test_archive_cannot_escape_destination(self):
         archive = self.archive({"..": {"files": {"escaped": {"offset": "0", "size": 1}}}}, b"x")
         with self.assertRaises(ValueError):
