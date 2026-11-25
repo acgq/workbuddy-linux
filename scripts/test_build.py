@@ -52,6 +52,53 @@ class BuildTests(unittest.TestCase):
         self.assertEqual(extract_asar(archive, output), ["win32-x64/addon.node"])
         self.assertFalse((output / "win32-x64/addon.node").exists())
 
+    def test_unindexed_sidecars_survive_extraction_and_repacking(self):
+        archive = self.archive({"main": {"files": {
+            "index.js": {"offset": "0", "size": 5},
+        }}}, b"hello")
+        sidecar = self.root / "app.asar.unpacked"
+        preload = sidecar / "main/preload"
+        preload.mkdir(parents=True)
+        for name in ("fork-preload.cjs", "background-worker.cjs"):
+            (preload / name).write_text(f"// {name}")
+        # An unindexed executable must retain its permissions as well.
+        tool = sidecar / "helper"
+        tool.write_bytes(b"ELF")
+        tool.chmod(0o755)
+        # A stale sidecar must not override a packed entry.
+        (sidecar / "main/index.js").write_text("stale")
+        output = self.root / "out"
+        self.assertEqual(extract_asar(archive, output), [])
+        self.assertEqual((output / "main/index.js").read_text(), "hello")
+        self.assertTrue((output / "helper").stat().st_mode & 0o111)
+        repacked = self.root / "out.asar"
+        output.rename(self.root / "out.asar.unpacked")
+        pack_unpacked_asar(self.root / "out.asar.unpacked", repacked)
+        final = self.root / "final"
+        extract_asar(repacked, final)
+        for name in ("fork-preload.cjs", "background-worker.cjs"):
+            self.assertEqual((final / "main/preload" / name).read_text(), f"// {name}")
+
+    def test_unindexed_sidecar_links_stay_inside_application(self):
+        archive = self.archive({})
+        sidecar = self.root / "app.asar.unpacked"
+        sidecar.mkdir()
+        (sidecar / "worker.cjs").write_text("// worker")
+        (sidecar / "alias.cjs").symlink_to("worker.cjs")
+        output = self.root / "out"
+        extract_asar(archive, output)
+        self.assertTrue((output / "alias.cjs").is_symlink())
+        self.assertEqual((output / "alias.cjs").resolve(), output / "worker.cjs")
+
+    def test_unindexed_sidecar_link_cannot_escape_source(self):
+        archive = self.archive({})
+        sidecar = self.root / "app.asar.unpacked"
+        sidecar.mkdir()
+        (self.root / "outside.cjs").write_text("outside")
+        (sidecar / "escape.cjs").symlink_to("../outside.cjs")
+        with self.assertRaises(ValueError):
+            extract_asar(archive, self.root / "out")
+
     def test_missing_application_sidecar_fails(self):
         archive = self.archive({"main.js": {"unpacked": True, "size": 3}})
         with self.assertRaises(FileNotFoundError):

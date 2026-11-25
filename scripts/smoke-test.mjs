@@ -141,6 +141,11 @@ try {
   const idleSeconds = (performance.now() - started) / 1000;
   const idleCpuPercent = Math.round(ticks / ticksPerSecond / idleSeconds * 1000) / 10;
   const idleCpuByProcess = Object.fromEntries([...ticksByProcess].map(([name, ticks]) => [name, Math.round(ticks / ticksPerSecond / idleSeconds * 1000) / 10]));
+  const daemonLog = path.join(profile, 'logs/daemon.log');
+  if (existsSync(daemonLog)) {
+    assert.doesNotMatch(readFileSync(daemonLog, 'utf8'), /EXTENSION_PRELOAD_MISSING|BACKGROUND_WORKER_MISSING/,
+      'Extension services could not start because their preloads are missing');
+  }
   const screenshot = await command('Page.captureScreenshot', { format: 'png' });
   writeFileSync(path.join(output, 'login.png'), Buffer.from(screenshot.data, 'base64'));
   writeFileSync(path.join(output, 'result.json'), JSON.stringify({ page: page.url, title: page.title, text, profile, storageBootstrap: credentials, idleSeconds, idleCpuPercent, idleCpuByProcess, idleSamples, cpuScope: 'main process, process group and descendants; 100% = one CPU core' }, null, 2));

@@ -18,7 +18,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parent.parent
 CACHE = ROOT / "work/cache"
 UPDATE = "https://copilot.tencent.com/v2/update?platform="
-PACKAGING_REVISION = 2
+PACKAGING_REVISION = 3
 
 
 def run(*args, **kwargs):
@@ -82,6 +82,7 @@ def extract_asar(archive, destination):
     destination.mkdir(parents=True)
     sidecar = archive.with_name(archive.name + ".unpacked")
     skipped = []
+    indexed_files = set()
     with archive.open("rb") as stream:
         prefix = stream.read(8)
         if len(prefix) != 8:
@@ -103,6 +104,7 @@ def extract_asar(archive, destination):
                     target.mkdir(parents=True, exist_ok=True)
                     walk(entry["files"], relative)
                     continue
+                indexed_files.add(relative)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 if "link" in entry:
                     link = safe_path(destination, entry["link"])
@@ -130,6 +132,28 @@ def extract_asar(archive, destination):
                 if target.exists() and entry.get("executable"):
                     target.chmod(0o755)
         walk(tree["files"])
+
+    def supplement(directory, parent=""):
+        # Upstream also ships runtime files (including extension preloads) only
+        # in the sidecar, without ASAR entries. Keep those files too, while the
+        # ASAR index remains authoritative for any paths present in both places.
+        for source in sorted(directory.iterdir()):
+            relative = str(PurePosixPath(parent) / source.name)
+            safe_path(sidecar, relative)
+            target = safe_path(destination, relative)
+            if relative in indexed_files:
+                continue
+            if source.is_symlink():
+                link = source.resolve().relative_to(sidecar.resolve())
+                target.symlink_to(os.path.relpath(safe_path(destination, link.as_posix()), target.parent))
+            elif source.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+                supplement(source, relative)
+            else:
+                shutil.copy2(source, target)
+
+    if sidecar.exists():
+        supplement(sidecar)
     return skipped
 
 

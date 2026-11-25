@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const { existsSync, readFileSync } = require('node:fs');
 const { createRequire } = require('node:module');
 const path = require('node:path');
 const app = path.resolve(process.argv[2]);
@@ -7,6 +8,12 @@ const load = createRequire(path.join(app, cliOnly ? 'cli/package.json' : 'packag
 
 (async () => {
   if (!cliOnly) {
+    const daemon = readFileSync(path.join(app, 'main/daemon-bootstrap.js'), 'utf8');
+    for (const name of ['fork-preload.cjs', 'background-worker.cjs']) {
+      if (daemon.includes(name)) {
+        assert.ok(existsSync(path.join(app, 'main/preload', name)), `Missing extension preload: ${name}`);
+      }
+    }
     const Database = load('./package.json').dependencies['better-sqlite3']
       ? load('better-sqlite3') : load('node:sqlite').DatabaseSync;
     const db = new Database(':memory:');
